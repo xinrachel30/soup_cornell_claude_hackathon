@@ -54,22 +54,32 @@ async def bulk_fetch_youtube():
             
             params = {
                 "part": "snippet",
-                "q": f"{query} full course", # Appending "full course" gets better educational results
+                "q": f"{query} full course",
                 "type": "video",
-                "videoDuration": "long",     # Ensures we get videos > 20 mins (not shorts)
-                "maxResults": 10,            # Get the top 10 results per keyword
+                # "videoDuration": "long",  <-- Commenting this out usually fixes the empty list issue!
+                "maxResults": 10,
                 "key": YOUTUBE_API_KEY
             }
             
             try:
                 response = await client.get(url, params=params)
                 
+                # Added response.text here so if it DOES error, we see the exact reason
                 if response.status_code != 200:
-                    print(f"⚠️ API Error on '{query}': {response.status_code}")
+                    print(f"⚠️ API Error on '{query}': {response.status_code} - {response.text}")
                     continue
                     
                 data = response.json()
-                added_this_round = 0
+                
+                # --- NEW DEBUG BLOCK ---
+                # This will print the raw data for the very first keyword so we can inspect it
+                if index == 0:
+                    print("\n--- RAW YOUTUBE API RESPONSE ---")
+                    # We only print the top-level keys to not flood your terminal
+                    print(f"Keys in response: {list(data.keys())}")
+                    print(f"Number of items found: {len(data.get('items', []))}")
+                    print("--------------------------------\n")
+                # -----------------------
                 
                 for item in data.get("items", []):
                     video_id = item["id"]["videoId"]
