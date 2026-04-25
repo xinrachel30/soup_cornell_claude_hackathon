@@ -9,9 +9,10 @@ type CourseProps = {
     partner_institution?: string;
     category?: string;
     match_score?: number;
-    // --- Add these so TypeScript stops complaining during the "hunt" ---
     reasoning?: string;
-    featured_review?: { text: string; author?: string };
+
+    // ✅ MOVED THESE UP: They are top-level properties of the course
+    vibe_summary?: string;
     features?: {
       beginner_friendly?: number;
       hands_on?: number;
@@ -21,16 +22,22 @@ type CourseProps = {
       beginner_friendly?: number;
       hands_on?: number;
     };
-    vibe_summary?: string;
+
+    // featured_review now only contains its own specific properties
+    featured_review?: {
+      description?: string;
+      author?: string;
+      rating?: number;
+    };
   };
   isPersonalized: boolean;
 };
 
 export default function CourseCard({ course, isPersonalized }: CourseProps) {
-  // 1. DATA NORMALIZATION (Now includes Author)
+  // DATA NORMALIZATION
   const displayQuote =
     course.vibe_summary ||
-    course.featured_review?.text ||
+    course.featured_review?.description ||
     course.features?.summary ||
     course.reasoning;
 

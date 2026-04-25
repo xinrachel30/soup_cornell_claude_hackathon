@@ -14,15 +14,20 @@ export type Course = {
   category?: string;
   duration_minutes?: number;
   match_score?: number;
+  reasoning?: string;
+  vibe_summary?: string;
   features?: {
     beginner_friendly?: number;
     hands_on?: number;
+    summary?: string;
   };
-  vibe_summary?: string;
-  reasoning?: string;
+  scores?: {
+    beginner_friendly?: number;
+    hands_on?: number;
+  };
   featured_review?: {
-    author?: string;
     description?: string;
+    author?: string;
     rating?: number;
   };
 };
@@ -41,17 +46,16 @@ export default function Home() {
     !!quizPrefs && (quizPrefs.budget !== "any" || quizPrefs.time !== "any");
 
   // --- STATIC RECOMMENDATION ENGINE ---
-  // This replaces your FastAPI backend logic
   const fetchAndFilter = useCallback(
     async (query: string, prefs: QuizPreferences | null) => {
       setIsLoading(true);
 
       try {
-        // Fetch ALL local JSON files, including the scored (Gemini) data
+        // ✅ Fetch ALL local JSON files, including the scored (Gemini) data
         const [ytRes, courseraRes, scoredRes] = await Promise.all([
           fetch(`${REPO_NAME}/youtube_courses.json`),
           fetch(`${REPO_NAME}/coursera_courses.json`),
-          fetch(`${REPO_NAME}/scored_courses.json`), // Added this!
+          fetch(`${REPO_NAME}/scored_courses.json`),
         ]);
 
         if (!ytRes.ok || !courseraRes.ok || !scoredRes.ok) {
@@ -62,7 +66,7 @@ export default function Home() {
 
         const ytData = await ytRes.json();
         const courseraData = await courseraRes.json();
-        const scoredData = await scoredRes.json(); // This is your dictionary keyed by title
+        const scoredData = await scoredRes.json();
 
         // 🤝 The "Smart Join" translated to JavaScript
         const rawData = [...ytData, ...courseraData];
@@ -99,20 +103,22 @@ export default function Home() {
             );
           })
           .map((course) => {
-            let score = 10;
+            let score = 10; // Starting base score
             const dur = course.duration_minutes || 0;
             const budget = prefs?.budget || "any";
 
+            // 1. Duration Scoring (T-Shirt Sizing)
             if (dur > 0) {
               if (dur >= minT && dur <= maxT) {
-                score += 80;
+                score += 80; // Perfect fit
               } else if (prefs?.time !== "any") {
-                score -= 50;
+                score -= 50; // Penalty for mismatch
               }
             } else {
-              score += 20;
+              score += 20; // Default for missing data
             }
 
+            // 2. Budget/Provider Preference
             if (budget === "free" && course.provider === "YouTube") score += 30;
             else if (budget === "paid" && course.provider === "Coursera")
               score += 30;
@@ -121,6 +127,7 @@ export default function Home() {
             return { ...course, match_score: score };
           });
 
+        // Sort by Match Score descending
         const sorted = scoredResults.sort(
           (a, b) => (b.match_score || 0) - (a.match_score || 0),
         );
