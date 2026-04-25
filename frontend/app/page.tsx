@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import CourseCard from "./components/CourseCard";
 import LearningQuiz, { QuizPreferences } from "./components/LearningQuiz";
 
+// --- TYPE DEFINITIONS ---
 export type Course = {
   title: string;
   url: string;
@@ -11,22 +12,13 @@ export type Course = {
   provider: string;
   partner_institution?: string;
   category?: string;
+  duration_minutes?: number;
   match_score?: number;
-  // --- Fields from your scored_courses JSON ---
-  scores?: {
-    beginner_friendly: number;
-    hands_on: number;
-  };
   features?: {
     beginner_friendly?: number;
     hands_on?: number;
-    summary?: string; // Some courses use this
   };
-  featured_review?: {
-    text: string;
-  };
-  vibe_summary?: string; // Fallback key
-  reasoning?: string; // Fallback key
+  vibe_summary?: string;
 };
 
 export default function Home() {
@@ -36,24 +28,77 @@ export default function Home() {
   const [showQuiz, setShowQuiz] = useState(true);
   const [quizPrefs, setQuizPrefs] = useState<QuizPreferences | null>(null);
 
-  // AIRTIGHT LOGIC: Only personalized if quiz was taken AND choices weren't "any"
   const isPersonalized =
     !!quizPrefs && (quizPrefs.budget !== "any" || quizPrefs.time !== "any");
 
-  const fetchSmartResults = useCallback(
+  // --- STATIC RECOMMENDATION ENGINE ---
+  const fetchAndFilter = useCallback(
     async (query: string, prefs: QuizPreferences | null) => {
       setIsLoading(true);
-      const budget = prefs?.budget || "any";
-      const time = prefs?.time || "any";
-      const url = `http://localhost:8000/api/recommend?q=${encodeURIComponent(query)}&budget=${budget}&time=${time}`;
 
       try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Backend connection failed");
-        const data = await res.json();
-        setCourses(data);
+        // 1. Fetch the local JSON files from the public/ folder
+        const [ytRes, courseraRes] = await Promise.all([
+          fetch("./youtube_courses.json"),
+          fetch("./coursera_courses.json"),
+        ]);
+
+        const ytData = await ytRes.json();
+        const courseraData = await courseraRes.json();
+        const allData: Course[] = [...ytData, ...courseraData];
+
+        // 2. Define Time Ranges (Matching your Python logic)
+        const TIME_MAP: Record<string, [number, number]> = {
+          snack: [1, 45],
+          weekend: [46, 300],
+          cert: [301, 2400],
+          mastery: [2401, 999999],
+          any: [0, 999999],
+        };
+
+        const [minT, maxT] = TIME_MAP[prefs?.time || "any"];
+        const searchTerm = query.toLowerCase().trim();
+
+        // 3. Scoring & Filtering Logic
+        const scored = allData
+          .filter((course) => {
+            if (!searchTerm) return true;
+            return (
+              course.title.toLowerCase().includes(searchTerm) ||
+              course.category?.toLowerCase().includes(searchTerm)
+            );
+          })
+          .map((course) => {
+            let score = 10; // Base score
+            const dur = course.duration_minutes || 0;
+            const budget = prefs?.budget || "any";
+
+            // Duration Points
+            if (dur > 0) {
+              if (dur >= minT && dur <= maxT) {
+                score += 80;
+              } else if (prefs?.time !== "any") {
+                score -= 50; // Penalty for wrong size
+              }
+            } else {
+              score += 20; // Default boost for missing data
+            }
+
+            // Budget Points
+            if (budget === "free" && course.provider === "YouTube") score += 30;
+            else if (budget === "paid" && course.provider === "Coursera")
+              score += 30;
+            else if (budget === "any") score += 15;
+
+            return { ...course, match_score: score };
+          });
+
+        // 4. Sort by Match Score
+        setCourses(
+          scored.sort((a, b) => (b.match_score || 0) - (a.match_score || 0)),
+        );
       } catch (error) {
-        console.error("Fetch error:", error);
+        console.error("Static data load error:", error);
       } finally {
         setIsLoading(false);
       }
@@ -63,10 +108,10 @@ export default function Home() {
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
-      fetchSmartResults(searchQuery, quizPrefs);
-    }, 400);
+      fetchAndFilter(searchQuery, quizPrefs);
+    }, 300);
     return () => clearTimeout(delayDebounceFn);
-  }, [searchQuery, quizPrefs, fetchSmartResults]);
+  }, [searchQuery, quizPrefs, fetchAndFilter]);
 
   const handleQuizComplete = (prefs: QuizPreferences) => {
     setQuizPrefs(prefs);
@@ -87,7 +132,7 @@ export default function Home() {
             Course <span className="text-blue-600">Aggregator</span>
           </h1>
           <p className="text-xl text-slate-600 max-w-2xl font-medium">
-            Find the right course for your schedule and budget.
+            Personalized learning pathways based on your budget and schedule.
           </p>
         </div>
 
@@ -97,7 +142,7 @@ export default function Home() {
             <LearningQuiz onComplete={handleQuizComplete} />
           </div>
         ) : (
-          <div className="mb-8 flex items-center justify-between p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
+          <div className="mb-8 flex items-center justify-between p-5 bg-white rounded-2xl border border-slate-200 shadow-sm">
             {!isPersonalized ? (
               <div className="flex items-center gap-3">
                 <div className="bg-slate-400 text-white p-2 rounded-lg">
@@ -139,7 +184,7 @@ export default function Home() {
                   <span className="text-blue-600">
                     {quizPrefs?.budget === "free"
                       ? "Free Only"
-                      : "Paid/Certificates"}{" "}
+                      : "Paid Content"}{" "}
                     •{quizPrefs?.time === "snack" && " Snack-sized"}
                     {quizPrefs?.time === "weekend" && " Weekend Project"}
                     {quizPrefs?.time === "cert" && " Certification Path"}
@@ -150,9 +195,9 @@ export default function Home() {
             )}
             <button
               onClick={handleResetQuiz}
-              className="text-sm font-bold text-blue-600 hover:text-blue-800"
+              className="text-sm font-bold text-blue-600 hover:text-blue-800 underline"
             >
-              Reset Quiz
+              Reset Preferences
             </button>
           </div>
         )}
@@ -161,23 +206,23 @@ export default function Home() {
         <div className="mb-12">
           <input
             type="text"
-            placeholder="Search for a skill or topic..."
+            placeholder="Search for a skill (e.g. SQL, Python, Excel...)"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full max-w-2xl p-5 bg-white border-2 border-slate-200 rounded-2xl shadow-sm focus:border-blue-500 outline-none text-slate-900 text-lg font-medium transition-all"
           />
         </div>
 
-        {/* RESULTS GRID */}
+        {/* GRID */}
         {isLoading ? (
           <div className="text-center py-24">
             <div className="inline-block animate-spin h-10 w-10 border-4 border-blue-600 border-t-transparent rounded-full mb-4"></div>
             <p className="text-slate-500 font-bold tracking-widest text-sm uppercase">
-              Curating path...
+              Optimizing Grid...
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
             {courses.map((course, index) => (
               <CourseCard
                 key={`${course.url}-${index}`}
