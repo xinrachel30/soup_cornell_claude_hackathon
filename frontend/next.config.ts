@@ -1,11 +1,10 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  output: "export",
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  output: "export", // Required for GitHub Pages
   images: {
-    unoptimized: true,
+    unoptimized: true, // Required for GitHub Pages
   },
-  // ADD THESE TWO LINES:
-  // Use your EXACT repository name here
   basePath: "/soup_cornell_claude_hackathon",
   assetPrefix: "/soup_cornell_claude_hackathon",
 };

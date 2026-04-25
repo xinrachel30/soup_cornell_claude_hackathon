@@ -28,26 +28,36 @@ export default function Home() {
   const [showQuiz, setShowQuiz] = useState(true);
   const [quizPrefs, setQuizPrefs] = useState<QuizPreferences | null>(null);
 
+  // Constants for GitHub Pages subfolder pathing
+  const REPO_NAME = "/soup_cornell_claude_hackathon";
+
   const isPersonalized =
     !!quizPrefs && (quizPrefs.budget !== "any" || quizPrefs.time !== "any");
 
   // --- STATIC RECOMMENDATION ENGINE ---
+  // This replaces your FastAPI backend logic
   const fetchAndFilter = useCallback(
     async (query: string, prefs: QuizPreferences | null) => {
       setIsLoading(true);
 
       try {
-        // 1. Fetch the local JSON files from the public/ folder
+        // Fetch local JSON files from the public folder
         const [ytRes, courseraRes] = await Promise.all([
-          fetch("./youtube_courses.json"),
-          fetch("./coursera_courses.json"),
+          fetch(`${REPO_NAME}/youtube_courses.json`),
+          fetch(`${REPO_NAME}/coursera_courses.json`),
         ]);
+
+        if (!ytRes.ok || !courseraRes.ok) {
+          throw new Error(
+            "Data files not found. Ensure they are in the public/ folder.",
+          );
+        }
 
         const ytData = await ytRes.json();
         const courseraData = await courseraRes.json();
         const allData: Course[] = [...ytData, ...courseraData];
 
-        // 2. Define Time Ranges (Matching your Python logic)
+        // Time thresholds matching your original logic
         const TIME_MAP: Record<string, [number, number]> = {
           snack: [1, 45],
           weekend: [46, 300],
@@ -59,32 +69,33 @@ export default function Home() {
         const [minT, maxT] = TIME_MAP[prefs?.time || "any"];
         const searchTerm = query.toLowerCase().trim();
 
-        // 3. Scoring & Filtering Logic
-        const scored = allData
+        // Client-side Scoring Logic
+        const scoredResults = allData
           .filter((course) => {
             if (!searchTerm) return true;
             return (
               course.title.toLowerCase().includes(searchTerm) ||
-              course.category?.toLowerCase().includes(searchTerm)
+              course.category?.toLowerCase().includes(searchTerm) ||
+              course.provider.toLowerCase().includes(searchTerm)
             );
           })
           .map((course) => {
-            let score = 10; // Base score
+            let score = 10; // Starting base score
             const dur = course.duration_minutes || 0;
             const budget = prefs?.budget || "any";
 
-            // Duration Points
+            // 1. Duration Scoring (T-Shirt Sizing)
             if (dur > 0) {
               if (dur >= minT && dur <= maxT) {
-                score += 80;
+                score += 80; // Perfect fit
               } else if (prefs?.time !== "any") {
-                score -= 50; // Penalty for wrong size
+                score -= 50; // Penalty for mismatch
               }
             } else {
-              score += 20; // Default boost for missing data
+              score += 20; // Default for missing data
             }
 
-            // Budget Points
+            // 2. Budget/Provider Preference
             if (budget === "free" && course.provider === "YouTube") score += 30;
             else if (budget === "paid" && course.provider === "Coursera")
               score += 30;
@@ -93,19 +104,21 @@ export default function Home() {
             return { ...course, match_score: score };
           });
 
-        // 4. Sort by Match Score
-        setCourses(
-          scored.sort((a, b) => (b.match_score || 0) - (a.match_score || 0)),
+        // Sort by Match Score descending
+        const sorted = scoredResults.sort(
+          (a, b) => (b.match_score || 0) - (a.match_score || 0),
         );
+        setCourses(sorted);
       } catch (error) {
         console.error("Static data load error:", error);
       } finally {
         setIsLoading(false);
       }
     },
-    [],
+    [REPO_NAME],
   );
 
+  // Debounce search input to prevent excessive processing
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       fetchAndFilter(searchQuery, quizPrefs);
@@ -126,22 +139,18 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
-        {/* HEADER */}
+        {/* HEADER SECTION */}
         <div className="mb-12 text-center sm:text-left">
           <h1 className="text-5xl font-black text-slate-900 tracking-tight mb-3">
             Course <span className="text-blue-600">Aggregator</span>
           </h1>
           <p className="text-xl text-slate-600 max-w-2xl font-medium">
-            Personalized learning pathways based on your budget and schedule.
+            Personalized learning pathways delivered via static-edge deployment.
           </p>
         </div>
 
-        {/* QUIZ OR OPTIMIZATION BAR */}
-        {showQuiz ? (
-          <div className="mb-16">
-            <LearningQuiz onComplete={handleQuizComplete} />
-          </div>
-        ) : (
+        {/* PERSISTENT STATUS BAR */}
+        {!showQuiz && (
           <div className="mb-8 flex items-center justify-between p-5 bg-white rounded-2xl border border-slate-200 shadow-sm">
             {!isPersonalized ? (
               <div className="flex items-center gap-3">
@@ -160,7 +169,7 @@ export default function Home() {
                   </svg>
                 </div>
                 <p className="text-sm font-bold text-slate-600 uppercase tracking-wide">
-                  General Search Results
+                  General Search (Quiz Skipped)
                 </p>
               </div>
             ) : (
@@ -184,7 +193,7 @@ export default function Home() {
                   <span className="text-blue-600">
                     {quizPrefs?.budget === "free"
                       ? "Free Only"
-                      : "Paid Content"}{" "}
+                      : "Certificates/Paid"}{" "}
                     •{quizPrefs?.time === "snack" && " Snack-sized"}
                     {quizPrefs?.time === "weekend" && " Weekend Project"}
                     {quizPrefs?.time === "cert" && " Certification Path"}
@@ -197,40 +206,51 @@ export default function Home() {
               onClick={handleResetQuiz}
               className="text-sm font-bold text-blue-600 hover:text-blue-800 underline"
             >
-              Reset Preferences
+              Update Preferences
             </button>
           </div>
         )}
 
-        {/* SEARCH BAR */}
-        <div className="mb-12">
-          <input
-            type="text"
-            placeholder="Search for a skill (e.g. SQL, Python, Excel...)"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full max-w-2xl p-5 bg-white border-2 border-slate-200 rounded-2xl shadow-sm focus:border-blue-500 outline-none text-slate-900 text-lg font-medium transition-all"
-          />
-        </div>
+        {/* QUIZ INTERFACE */}
+        {showQuiz && (
+          <div className="mb-16">
+            <LearningQuiz onComplete={handleQuizComplete} />
+          </div>
+        )}
 
-        {/* GRID */}
-        {isLoading ? (
-          <div className="text-center py-24">
-            <div className="inline-block animate-spin h-10 w-10 border-4 border-blue-600 border-t-transparent rounded-full mb-4"></div>
-            <p className="text-slate-500 font-bold tracking-widest text-sm uppercase">
-              Optimizing Grid...
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-            {courses.map((course, index) => (
-              <CourseCard
-                key={`${course.url}-${index}`}
-                course={course}
-                isPersonalized={isPersonalized}
+        {/* SEARCH & FILTERS */}
+        {!showQuiz && (
+          <>
+            <div className="mb-12">
+              <input
+                type="text"
+                placeholder="Search by topic (e.g. SQL, Python, Excel...)"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full max-w-2xl p-5 bg-white border-2 border-slate-200 rounded-2xl shadow-sm focus:border-blue-500 outline-none text-slate-900 text-lg font-medium transition-all"
               />
-            ))}
-          </div>
+            </div>
+
+            {/* RESULTS GRID */}
+            {isLoading ? (
+              <div className="text-center py-24">
+                <div className="inline-block animate-spin h-10 w-10 border-4 border-blue-600 border-t-transparent rounded-full mb-4"></div>
+                <p className="text-slate-500 font-bold tracking-widest text-sm uppercase">
+                  Calculating Matches...
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+                {courses.map((course, index) => (
+                  <CourseCard
+                    key={`${course.url}-${index}`}
+                    course={course}
+                    isPersonalized={isPersonalized}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </main>
