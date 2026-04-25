@@ -40,7 +40,7 @@ KEYWORDS = [
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 backend_dir = os.path.abspath(os.path.join(script_dir, ".."))
-output_path = os.path.join(backend_dir, 'courses.json')
+output_path = os.path.join(backend_dir, 'youtube_courses.json')
 
 async def bulk_fetch_youtube():
     unique_youtube_courses = {}
@@ -80,6 +80,9 @@ async def bulk_fetch_youtube():
                     print(f"Number of items found: {len(data.get('items', []))}")
                     print("--------------------------------\n")
                 # -----------------------
+                    
+                data = response.json()
+                added_this_round = 0
                 
                 for item in data.get("items", []):
                     video_id = item["id"]["videoId"]
