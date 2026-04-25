@@ -1,12 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: "export", // CRITICAL: Tells Next to create a 'out' folder
+  output: "export",
   images: {
-    unoptimized: true, // GitHub Pages can't resize images on the fly
+    unoptimized: true,
   },
-  // If your repo is NOT 'username.github.io' (e.g. it is 'username.github.io/my-repo')
-  // add the line below:
-  // basePath: '/your-repo-name',
+  // ADD THESE TWO LINES:
+  // Use your EXACT repository name here
+  basePath: "/soup_cornell_claude_hackathon",
+  assetPrefix: "/soup_cornell_claude_hackathon",
 };
 
 export default nextConfig;
