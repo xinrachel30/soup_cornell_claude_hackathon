@@ -19,6 +19,12 @@ export type Course = {
     hands_on?: number;
   };
   vibe_summary?: string;
+  reasoning?: string;
+  featured_review?: {
+    author?: string;
+    description?: string;
+    rating?: number;
+  };
 };
 
 export default function Home() {
@@ -41,21 +47,34 @@ export default function Home() {
       setIsLoading(true);
 
       try {
-        // Fetch local JSON files from the public folder
-        const [ytRes, courseraRes] = await Promise.all([
+        // Fetch ALL local JSON files, including the scored (Gemini) data
+        const [ytRes, courseraRes, scoredRes] = await Promise.all([
           fetch(`${REPO_NAME}/youtube_courses.json`),
           fetch(`${REPO_NAME}/coursera_courses.json`),
+          fetch(`${REPO_NAME}/scored_courses.json`), // Added this!
         ]);
 
-        if (!ytRes.ok || !courseraRes.ok) {
+        if (!ytRes.ok || !courseraRes.ok || !scoredRes.ok) {
           throw new Error(
-            "Data files not found. Ensure they are in the public/ folder.",
+            "Data files not found. Ensure all three are in the public/ folder.",
           );
         }
 
         const ytData = await ytRes.json();
         const courseraData = await courseraRes.json();
-        const allData: Course[] = [...ytData, ...courseraData];
+        const scoredData = await scoredRes.json(); // This is your dictionary keyed by title
+
+        // 🤝 The "Smart Join" translated to JavaScript
+        const rawData = [...ytData, ...courseraData];
+        const allData: Course[] = rawData.map((course) => {
+          // Look up the course title in the scored dictionary
+          const enrichedInfo = scoredData[course.title];
+          if (enrichedInfo) {
+            // Merge the raw data with the Gemini insights
+            return { ...course, ...enrichedInfo };
+          }
+          return course;
+        });
 
         // Time thresholds matching your original logic
         const TIME_MAP: Record<string, [number, number]> = {
@@ -80,22 +99,20 @@ export default function Home() {
             );
           })
           .map((course) => {
-            let score = 10; // Starting base score
+            let score = 10;
             const dur = course.duration_minutes || 0;
             const budget = prefs?.budget || "any";
 
-            // 1. Duration Scoring (T-Shirt Sizing)
             if (dur > 0) {
               if (dur >= minT && dur <= maxT) {
-                score += 80; // Perfect fit
+                score += 80;
               } else if (prefs?.time !== "any") {
-                score -= 50; // Penalty for mismatch
+                score -= 50;
               }
             } else {
-              score += 20; // Default for missing data
+              score += 20;
             }
 
-            // 2. Budget/Provider Preference
             if (budget === "free" && course.provider === "YouTube") score += 30;
             else if (budget === "paid" && course.provider === "Coursera")
               score += 30;
@@ -104,7 +121,6 @@ export default function Home() {
             return { ...course, match_score: score };
           });
 
-        // Sort by Match Score descending
         const sorted = scoredResults.sort(
           (a, b) => (b.match_score || 0) - (a.match_score || 0),
         );
